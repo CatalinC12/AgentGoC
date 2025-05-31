@@ -15,6 +15,10 @@ type MetaEntry struct {
 
 // DecodeMeta decodes Go's binary .covmeta coverage metadata format.
 func DecodeMeta(data []byte) ([]MetaEntry, error) {
+	if len(data) < 8 {
+		return nil, fmt.Errorf("DecodeMeta: data too short (%d bytes)", len(data))
+	}
+
 	reader := NewSliceReader(data)
 
 	// Parse string table (shared names)
@@ -28,11 +32,30 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 
 	// Parse function records
 	for !reader.EOF() {
-		funcNameIdx, _ := reader.ReadULEB()
-		fileNameIdx, _ := reader.ReadULEB()
-		startLine, _ := reader.ReadULEB()
-		endLine, _ := reader.ReadULEB()
-		numCounters, _ := reader.ReadULEB()
+		funcNameIdx, err := reader.ReadULEB()
+		if err != nil || int(funcNameIdx) >= len(strings) {
+			return nil, fmt.Errorf("invalid funcName index: %v", funcNameIdx)
+		}
+
+		fileNameIdx, err := reader.ReadULEB()
+		if err != nil || int(fileNameIdx) >= len(strings) {
+			return nil, fmt.Errorf("invalid fileName index: %v", fileNameIdx)
+		}
+
+		startLine, err := reader.ReadULEB()
+		if err != nil {
+			return nil, fmt.Errorf("invalid startLine: %w", err)
+		}
+
+		endLine, err := reader.ReadULEB()
+		if err != nil {
+			return nil, fmt.Errorf("invalid endLine: %w", err)
+		}
+
+		numCounters, err := reader.ReadULEB()
+		if err != nil {
+			return nil, fmt.Errorf("invalid numCounters: %w", err)
+		}
 
 		funcName := strings[int(funcNameIdx)]
 		fileName := strings[int(fileNameIdx)]
@@ -41,7 +64,7 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 			entry := MetaEntry{
 				FilePath:  fileName,
 				FuncName:  funcName,
-				LineStart: uint32(startLine), // assuming all counters span full func for now
+				LineStart: uint32(startLine),
 				LineEnd:   uint32(endLine),
 				CounterID: counterID,
 			}
