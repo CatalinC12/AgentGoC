@@ -1,10 +1,12 @@
-package uleb128
+package src
 
 import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	_ "os"
+	"time"
 )
 
 // Automatically start the TCP server when the agent is imported
@@ -33,22 +35,35 @@ func startTCPServer() {
 
 // GenerateLcovOutput Handles a TCP request from WuppieFuzz
 func GenerateLcovOutput() (string, error) {
-	data, err := WriteCoverageToBuffer()
-	if err != nil {
-		return "", err
+	const maxAttempts = 3
+	const delay = 200 * time.Millisecond
+
+	for i := 0; i < maxAttempts; i++ {
+		data, err := WriteCoverageToBuffer()
+		if err != nil {
+			log.Printf("[Agent] Coverage buffer error: %v", err)
+			time.Sleep(delay)
+			continue
+		}
+
+		meta, err := DecodeMeta(data)
+		if err != nil {
+			log.Printf("[Agent] DecodeMeta error (attempt %d): %v", i+1, err)
+			time.Sleep(delay)
+			continue
+		}
+
+		counters, err := DecodeCounters(data)
+		if err != nil {
+			log.Printf("[Agent] DecodeCounters error (attempt %d): %v", i+1, err)
+			time.Sleep(delay)
+			continue
+		}
+
+		return EmitLcov(meta, counters)
 	}
 
-	meta, err := DecodeMeta(data)
-	if err != nil {
-		return "", err
-	}
-
-	counters, err := DecodeCounters(data)
-	if err != nil {
-		return "", err
-	}
-
-	return EmitLcov(meta, counters)
+	return "", fmt.Errorf("failed to generate LCOV output after retries")
 }
 
 func handleConnection(conn net.Conn) {
@@ -56,6 +71,7 @@ func handleConnection(conn net.Conn) {
 	fmt.Println("[Agent] Received coverage request")
 
 	lcov, err := GenerateLcovOutput()
+	os.WriteFile("report.lcov", []byte(lcov), 0644)
 	if err != nil {
 		log.Printf("Error generating LCOV output: %v", err)
 		return

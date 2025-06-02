@@ -1,7 +1,8 @@
-package uleb128
+package src
 
 import (
 	"fmt"
+	"log"
 )
 
 // MetaEntry represents a single counter's mapping to source code.
@@ -26,6 +27,8 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse string table: %w", err)
 	}
+
+	log.Printf("[Agent] String table size: %d", len(strings))
 
 	var entries []MetaEntry
 	counterID := 0
