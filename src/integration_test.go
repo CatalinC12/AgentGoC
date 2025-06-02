@@ -1,99 +1,74 @@
 package src
 
 import (
-	"fmt"
-	"net"
-	"strings"
+	"bytes"
 	"testing"
-	"time"
 )
 
-// Wait for the TCP server to be ready
-func waitForTCPServer(address string, retries int) error {
-	for i := 0; i < retries; i++ {
-		conn, err := net.Dial("tcp", address)
-		if err == nil {
-			conn.Close()
-			return nil
+// Minimal ULEB128 encoder (if not already imported)
+func encodeULEB128(value int) []byte {
+	var buf []byte
+	for {
+		b := byte(value & 0x7F)
+		value >>= 7
+		if value != 0 {
+			b |= 0x80
 		}
-		time.Sleep(100 * time.Millisecond)
+		buf = append(buf, b)
+		if value == 0 {
+			break
+		}
 	}
-	return fmt.Errorf("TCP server not available at %s after %d retries", address, retries)
+	return buf
 }
 
-// Test connecting to the running coverage TCP agent
-func TestAgentTCPResponse(t *testing.T) {
-	err := waitForTCPServer("localhost:8192", 10)
+// Helper to manually construct valid .covmeta and .covcounters
+func TestAgentLCOV_InternalPipeline(t *testing.T) {
+	var metaBuf bytes.Buffer
+
+	// ---------- Simulate .covmeta ----------
+	// String table: ["main", "main.go"]
+	metaBuf.Write(encodeULEB128(2)) // string count
+	metaBuf.Write(encodeULEB128(4)) // len("main")
+	metaBuf.WriteString("main")     // "main"
+	metaBuf.Write(encodeULEB128(7)) // len("main.go")
+	metaBuf.WriteString("main.go")  // "main.go"
+
+	// Function record
+	metaBuf.Write(encodeULEB128(0))  // funcNameIdx -> "main"
+	metaBuf.Write(encodeULEB128(1))  // fileNameIdx -> "main.go"
+	metaBuf.Write(encodeULEB128(10)) // start line
+	metaBuf.Write(encodeULEB128(20)) // end line
+	metaBuf.Write(encodeULEB128(1))  // numCounters
+
+	// ---------- Simulate .covcounters ----------
+	// .covcounters format: ULEB(functionID) + ULEB(count)
+	var counterBuf bytes.Buffer        // funcID = 0
+	counterBuf.Write(encodeULEB128(5)) // counter = 5
+
+	// ---------- Decode and Emit ----------
+	metaEntries, err := DecodeMeta(metaBuf.Bytes())
 	if err != nil {
-		t.Skip("TCP agent not ready: " + err.Error())
+		t.Fatalf("DecodeMeta failed: %v", err)
 	}
 
-	conn, err := net.Dial("tcp", "localhost:8192")
+	counters, err := DecodeCounters(counterBuf.Bytes())
 	if err != nil {
-		t.Fatalf("Failed to connect to TCP agent: %v", err)
-	}
-	defer conn.Close()
-
-	buf := make([]byte, 8192)
-	n, err := conn.Read(buf)
-	if err != nil && err.Error() != "EOF" {
-		t.Fatalf("Failed to read from agent: %v", err)
+		t.Fatalf("DecodeCounters failed: %v", err)
 	}
 
-	output := string(buf[:n])
-	if output == "" {
-		t.Skip("No data returned from agent (likely not built with -cover); skipping")
-	}
-
-	if strings.Contains(output, "no meta-data available") {
-		t.Skip("Binary not built with -cover; skipping TCP agent test")
-	}
-
-	if !strings.Contains(output, "SF:") {
-		t.Errorf("Unexpected agent response:\n%s", output)
-	}
-}
-
-// Test logic pipeline: collector → decode → emit
-func TestGenerateLcovOutput0(t *testing.T) {
-	lcov, err := GenerateLcovOutput()
+	lcov, err := EmitLcov(metaEntries, counters)
 	if err != nil {
-		if strings.Contains(err.Error(), "no meta-data available") {
-			t.Skip("Binary not built with -cover; skipping test")
-		}
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if !strings.Contains(lcov, "SF:") {
-		t.Errorf("Expected LCOV output to contain 'SF:', got:\n%s", lcov)
-	}
-}
-
-// Test each step manually: Write → Decode → Emit
-func TestFullAgentFlow(t *testing.T) {
-	data, err := WriteCoverageToBuffer()
-	if err != nil {
-		if strings.Contains(err.Error(), "no meta-data available") {
-			t.Skip("Binary not built with -cover; skipping full flow test")
-		}
-		t.Fatalf("Failed to collect coverage: %v", err)
+		t.Fatalf("EmitLcov failed: %v", err)
 	}
 
-	meta, err := DecodeMeta(data)
-	if err != nil {
-		t.Fatalf("Failed to decode meta: %v", err)
+	if !bytes.Contains([]byte(lcov), []byte("SF:main.go")) {
+		t.Errorf("Expected LCOV to include source file, got:\n%s", lcov)
 	}
 
-	counters, err := DecodeCounters(data)
-	if err != nil {
-		t.Fatalf("Failed to decode counters: %v", err)
-	}
+	t.Logf("Generated LCOV:\n%s", lcov)
 
-	lcov, err := EmitLcov(meta, counters)
-	if err != nil {
-		t.Fatalf("Failed to emit LCOV: %v", err)
-	}
-
-	if !strings.Contains(lcov, "SF:") {
-		t.Errorf("Expected LCOV output to contain 'SF:', got:\n%s", lcov)
+	if !bytes.Contains([]byte(lcov), []byte("DA:10,5")) {
+		t.Errorf("Expected LCOV to include DA entry for line 10, got:\n%s", lcov)
 	}
 }

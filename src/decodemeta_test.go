@@ -1,30 +1,49 @@
 package src
 
 import (
+	"bytes"
 	"testing"
 )
 
-// helper to encode a string table and one function record
-func encodeTestMetaData() []byte {
-	data := []byte{}
-	// String table: 2 strings ("foo", "main.go")
-	data = append(data, 0x02) // count = 2
-	data = append(data, 0x03) // len("foo")
-	data = append(data, 'f', 'o', 'o')
-	data = append(data, 0x07) // len("main.go")
-	data = append(data, 'm', 'a', 'i', 'n', '.', 'g', 'o')
-
-	// Function record: func="foo", file="main.go", lineStart=10, lineEnd=20, counters=1
-	data = append(data, 0x00) // index of "foo"
-	data = append(data, 0x01) // index of "main.go"
-	data = append(data, 0x0A) // start line = 10
-	data = append(data, 0x14) // end line = 20
-	data = append(data, 0x01) // 1 counter
-
-	return data
+// Helper to encode ULEB128 values
+func EncodeULEB128(value uint64) []byte {
+	var buf []byte
+	for {
+		b := byte(value & 0x7F)
+		value >>= 7
+		if value != 0 {
+			b |= 0x80
+		}
+		buf = append(buf, b)
+		if value == 0 {
+			break
+		}
+	}
+	return buf
 }
 
-func TestDecodeMeta(t *testing.T) {
+// Helper to build test metadata buffer for DecodeMeta
+func encodeTestMetaData() []byte {
+	var buf bytes.Buffer
+
+	// String table: ["foo", "main.go"]
+	buf.Write(EncodeULEB128(2)) // string count
+	buf.Write(EncodeULEB128(3)) // "foo"
+	buf.WriteString("foo")
+	buf.Write(EncodeULEB128(7)) // "main.go"
+	buf.WriteString("main.go")
+
+	// Function record
+	buf.Write(EncodeULEB128(0))  // funcNameIdx -> "foo"
+	buf.Write(EncodeULEB128(1))  // fileNameIdx -> "main.go"
+	buf.Write(EncodeULEB128(10)) // start line
+	buf.Write(EncodeULEB128(20)) // end line
+	buf.Write(EncodeULEB128(1))  // numCounters
+
+	return buf.Bytes()
+}
+
+func TestDecodeMeta_ValidSingleFunction(t *testing.T) {
 	data := encodeTestMetaData()
 
 	meta, err := DecodeMeta(data)

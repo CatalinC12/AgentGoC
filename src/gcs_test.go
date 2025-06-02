@@ -3,6 +3,8 @@ package src
 import (
 	"bytes"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -25,6 +27,11 @@ func (m *mockConn) Close() error {
 }
 
 func TestGenerateLcovOutput(t *testing.T) {
+	// Skip if .covmeta doesn't exist — don't attempt coverage logic
+	if _, err := os.Stat(filepath.Join(os.Getenv("GOCOVERDIR"), ".covmeta")); os.IsNotExist(err) {
+		t.Skip("Skipping: no .covmeta found (test must be run with real app and -cover)")
+	}
+
 	output, err := GenerateLcovOutput()
 	if err != nil {
 		if strings.Contains(err.Error(), "no meta-data available") {

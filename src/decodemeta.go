@@ -30,6 +30,11 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 
 	log.Printf("[Agent] String table size: %d", len(strings))
 
+	log.Println("[Agent] Decoded string table contents:")
+	for i, s := range strings {
+		log.Printf("  [%d] %q", i, s)
+	}
+
 	var entries []MetaEntry
 	counterID := 0
 
