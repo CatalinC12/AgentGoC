@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Minimal ULEB128 encoder (if not already imported)
+// Minimal ULEB128 encoder
 func encodeULEB128(value int) []byte {
 	var buf []byte
 	for {
@@ -22,11 +22,10 @@ func encodeULEB128(value int) []byte {
 	return buf
 }
 
-// Helper to manually construct valid .covmeta and .covcounters
+// manually construct valid .covmeta and .covcounters
 func TestAgentLCOV_InternalPipeline(t *testing.T) {
 	var metaBuf bytes.Buffer
 
-	// ---------- Simulate .covmeta ----------
 	// String table: ["main", "main.go"]
 	metaBuf.Write(encodeULEB128(2)) // string count
 	metaBuf.Write(encodeULEB128(4)) // len("main")
@@ -41,12 +40,11 @@ func TestAgentLCOV_InternalPipeline(t *testing.T) {
 	metaBuf.Write(encodeULEB128(20)) // end line
 	metaBuf.Write(encodeULEB128(1))  // numCounters
 
-	// ---------- Simulate .covcounters ----------
 	// .covcounters format: ULEB(functionID) + ULEB(count)
 	var counterBuf bytes.Buffer        // funcID = 0
 	counterBuf.Write(encodeULEB128(5)) // counter = 5
 
-	// ---------- Decode and Emit ----------
+	// Decode and Emit
 	metaEntries, err := DecodeMeta(metaBuf.Bytes())
 	if err != nil {
 		t.Fatalf("DecodeMeta failed: %v", err)
