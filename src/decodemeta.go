@@ -22,6 +22,11 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 
 	reader := NewSliceReader(data)
 
+	// Read header before string table
+	if err := readHeader(reader); err != nil {
+		return nil, err
+	}
+
 	// Parse string table (shared names)
 	strings, err := parseStringTable(reader)
 	if err != nil {
@@ -82,6 +87,24 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 	}
 
 	return entries, nil
+}
+
+func readHeader(r *SliceReader) error {
+	version, err := r.ReadULEB()
+	if err != nil {
+		return fmt.Errorf("failed to read metadata version: %w", err)
+	}
+
+	if version != 0 {
+		return fmt.Errorf("unsupported coverage metadata version: %d", version)
+	}
+
+	_, err = r.ReadULEB()
+	if err != nil {
+		return fmt.Errorf("failed to read metadata flags: %w", err)
+	}
+
+	return nil
 }
 
 func parseStringTable(r *SliceReader) ([]string, error) {

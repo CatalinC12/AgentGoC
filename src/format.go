@@ -2,6 +2,7 @@ package src
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -15,46 +16,75 @@ func EmitLcov(meta []MetaEntry, counters []uint64) (string, error) {
 		files[entry.FilePath] = append(files[entry.FilePath], entry)
 	}
 
-	for file, entries := range files {
+	// Process files in sorted order for consistency
+	var sortedFiles []string
+	for file := range files {
+		sortedFiles = append(sortedFiles, file)
+	}
+	sort.Strings(sortedFiles)
+
+	for _, file := range sortedFiles {
+		entries := files[file]
 		b.WriteString(fmt.Sprintf("SF:%s\n", file)) // Source File
 
 		funcLines := make(map[string]int)
+		funcHits := make(map[string]uint64)
+		seenLines := make(map[int]bool)
+
+		totalLines := 0
+		hitLines := 0
 
 		for _, entry := range entries {
 			if entry.CounterID >= len(counters) {
 				continue
 			}
-
 			count := counters[entry.CounterID]
+			line := int(entry.LineStart)
 
-			// FN:line,name
+			// FN: only once per function
 			if _, exists := funcLines[entry.FuncName]; !exists {
 				b.WriteString(fmt.Sprintf("FN:%d,%s\n", entry.LineStart, entry.FuncName))
-				funcLines[entry.FuncName] = int(entry.LineStart)
+				funcLines[entry.FuncName] = line
 			}
 
-			// FNDA:count,name
-			b.WriteString(fmt.Sprintf("FNDA:%d,%s\n", count, entry.FuncName))
+			// Count max hits for FNDA
+			funcHits[entry.FuncName] += count
 
-			// DA:line,count
-			b.WriteString(fmt.Sprintf("DA:%d,%d\n", entry.LineStart, count))
-		}
-
-		// Function summary
-		b.WriteString("FNF:")
-		b.WriteString(fmt.Sprintf("%d\n", len(funcLines))) // number of functions
-
-		b.WriteString("FNH:")
-		covered := 0
-		for _, entry := range entries {
-			if entry.CounterID < len(counters) && counters[entry.CounterID] > 0 {
-				covered++
+			// DA: emit once per line
+			if !seenLines[line] {
+				b.WriteString(fmt.Sprintf("DA:%d,%d\n", line, count))
+				seenLines[line] = true
+				totalLines++
+				if count > 0 {
+					hitLines++
+				}
 			}
 		}
-		b.WriteString(fmt.Sprintf("%d\n", covered)) // number of hit functions
+
+		// Emit FNDA after all counts collected
+		for name, line := range funcLines {
+			b.WriteString(fmt.Sprintf("FN:%d,%s\n", line, name)) // Ensure FN line is included
+			b.WriteString(fmt.Sprintf("FNDA:%d,%s\n", funcHits[name], name))
+		}
+
+		b.WriteString(fmt.Sprintf("FNF:%d\n", len(funcLines)))         // Functions Found
+		b.WriteString(fmt.Sprintf("FNH:%d\n", countNonZero(funcHits))) // Functions Hit
+
+		b.WriteString(fmt.Sprintf("LF:%d\n", totalLines)) // Lines Found
+		b.WriteString(fmt.Sprintf("LH:%d\n", hitLines))   // Lines Hit
 
 		b.WriteString("end_of_record\n")
 	}
 
 	return b.String(), nil
+}
+
+func countNonZero(m map[string]uint64) int {
+	count := 0
+	for _, v := range m {
+		if v > 0 {
+			count++
+		}
+	}
+	return count
 }
