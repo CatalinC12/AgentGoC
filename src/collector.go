@@ -6,21 +6,20 @@ import (
 	"runtime/coverage"
 )
 
-// WriteCoverageToBuffer collects Go runtime coverage data and returns it as a byte slice.
-func WriteCoverageToBuffer() ([]byte, error) {
-	var output bytes.Buffer
+// WriteCoverageToBuffers collects Go runtime coverage data and returns separate buffers.
+func WriteCoverageToBuffers() (metaBuf, counterBuf []byte, err error) {
+	var meta bytes.Buffer
+	var counters bytes.Buffer
 
-	// Write coverage metadata (.covmeta)
-	err := coverage.WriteMeta(&output)
+	err = coverage.WriteMeta(&meta)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write .covmeta: %w", err)
+		return nil, nil, fmt.Errorf("failed to write .covmeta: %w", err)
 	}
 
-	// Write coverage counters (.covcounters)
-	err = coverage.WriteCounters(&output)
+	err = coverage.WriteCounters(&counters)
 	if err != nil {
-		return nil, fmt.Errorf("failed to write .covcounters: %w", err)
+		return nil, nil, fmt.Errorf("failed to write .covcounters: %w", err)
 	}
 
-	return output.Bytes(), nil
+	return meta.Bytes(), counters.Bytes(), nil
 }
