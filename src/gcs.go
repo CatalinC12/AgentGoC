@@ -45,7 +45,8 @@ func GenerateLcovOutput() (string, error) {
 			continue
 		}
 
-		meta, err := DecodeMeta(metaBuf)
+		meta, err := DecodeFullMetaFile(metaBuf)
+
 		if err != nil {
 			log.Printf("[Agent] DecodeMeta error (attempt %d): %v", i+1, err)
 			time.Sleep(delay)
@@ -66,7 +67,12 @@ func GenerateLcovOutput() (string, error) {
 }
 
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			log.Printf("Error closing connection: %v", err)
+		}
+	}(conn)
 	fmt.Println("[Agent] Received coverage request")
 
 	lcov, err := GenerateLcovOutput()
