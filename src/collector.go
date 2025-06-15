@@ -6,7 +6,6 @@ import (
 	"runtime/coverage"
 )
 
-// WriteCoverageToBuffers collects both meta and counter data
 // directly from the Go runtime’s in-memory tables.
 func WriteCoverageToBuffers() (metaBuf, counterBuf []byte, err error) {
 	var meta bytes.Buffer

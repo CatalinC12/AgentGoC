@@ -4,13 +4,11 @@ import (
 	"errors"
 )
 
-// SliceReader wraps a byte slice and provides ULEB128 decoding utilities.
 type SliceReader struct {
 	data []byte
 	pos  int
 }
 
-// NewSliceReader creates a new reader from a byte slice.
 func NewSliceReader(data []byte) *SliceReader {
 	return &SliceReader{
 		data: data,
@@ -18,7 +16,6 @@ func NewSliceReader(data []byte) *SliceReader {
 	}
 }
 
-// ReadByte returns the next byte in the buffer.
 func (r *SliceReader) ReadByte() (byte, error) {
 	if r.pos >= len(r.data) {
 		return 0, errors.New("end of slice")

@@ -16,7 +16,6 @@ type MetaEntry struct {
 	CounterID int
 }
 
-// DecodeMeta parses the full .covmeta binary format across all packages.
 func DecodeMeta(data []byte) ([]MetaEntry, error) {
 	if len(data) < 80 {
 		return nil, fmt.Errorf("data too short to be valid .covmeta")
@@ -90,7 +89,6 @@ func DecodeMeta(data []byte) ([]MetaEntry, error) {
 	return allEntries, nil
 }
 
-// decodePackageBlob decodes a single package metadata section.
 func decodePackageBlob(data []byte, strings []string) ([]MetaEntry, error) {
 	reader := NewSliceReader(data)
 
@@ -130,7 +128,6 @@ func decodePackageBlob(data []byte, strings []string) ([]MetaEntry, error) {
 	return entries, nil
 }
 
-// parseStringTable reads ULEB-encoded string table from a slice reader.
 func parseStringTable(r *SliceReader) ([]string, error) {
 	var strings []string
 

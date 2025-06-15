@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// EmitLcov converts decoded coverage data into a valid LCOV format string.
 func EmitLcov(meta []MetaEntry, counters []uint64) (string, error) {
 	var b strings.Builder
 	files := make(map[string][]MetaEntry)

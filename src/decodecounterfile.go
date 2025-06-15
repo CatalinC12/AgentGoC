@@ -6,7 +6,6 @@ import (
 	"io"
 )
 
-// DecodeCounters parses the raw binary data containing the 'counter' values.
 // These values are typically ULEB128 encoded and reflect execution counts.
 func DecodeCounters(data []byte) ([]uint64, error) {
 	reader := bytes.NewReader(data)
