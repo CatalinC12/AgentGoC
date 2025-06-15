@@ -16,8 +16,8 @@ type MetaEntry struct {
 	CounterID int
 }
 
-// DecodeFullMetaFile parses the full .covmeta binary format across all packages.
-func DecodeFullMetaFile(data []byte) ([]MetaEntry, error) {
+// DecodeMeta parses the full .covmeta binary format across all packages.
+func DecodeMeta(data []byte) ([]MetaEntry, error) {
 	if len(data) < 80 {
 		return nil, fmt.Errorf("data too short to be valid .covmeta")
 	}
