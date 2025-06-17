@@ -1,59 +1,131 @@
 package src
 
 import (
+	"bytes"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 func init() {
-	go startCoverageTCPServer()
+	go startCoverageAgent()
 }
 
-func startCoverageTCPServer() {
-	ln, err := net.Listen("tcp", ":8192")
-	if err != nil {
-		log.Fatalf("[Agent] Failed to start TCP server: %v", err)
-	}
-	log.Println("[Agent] Coverage TCP server started on port 8192")
-
+func startCoverageAgent() {
 	go func() {
+		ln, err := net.Listen("tcp", ":8192")
+		if err != nil {
+			log.Println("[Agent] Failed to start TCP listener:", err)
+			return
+		}
+		log.Println("[Agent] Coverage TCP server started on port 8192")
+
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				log.Printf("[Agent] Connection error: %v", err)
+				log.Println("[Agent] Accept error:", err)
 				continue
 			}
-			go handleCoverageRequest(conn)
+			go handleConnection(conn)
 		}
 	}()
 }
 
-func handleCoverageRequest(conn net.Conn) {
+func handleConnection(conn net.Conn) {
 	defer func(conn net.Conn) {
 		err := conn.Close()
 		if err != nil {
-			log.Printf("[Agent] Failed to close connection: %v", err)
+			log.Println("[Agent] Failed to close connection:", err)
 		}
 	}(conn)
 	log.Println("[Agent] Received coverage export request")
 
-	// Use Go's built-in covdata tool to convert to LCOV
-	cmd := exec.Command("go", "tool", "covdata", "textfmt", "-i=.coverdata", "-o=-")
-	cmd.Env = os.Environ() // inherit env, including GOCOVERDIR if needed
-	output, err := cmd.Output()
+	err := os.Setenv("GOCOVERDIR", ".coverdata")
 	if err != nil {
-		log.Printf("[Agent] Failed to convert coverage: %v", err)
 		return
 	}
 
-	// Send the LCOV output to the TCP client (e.g., nc)
-	_, err = conn.Write(output)
+	tmpOut := ".agent-tmp"
+	err = os.RemoveAll(tmpOut)
 	if err != nil {
-		log.Printf("[Agent] Failed to write LCOV to connection: %v", err)
+		return
+	}
+	if err := os.MkdirAll(tmpOut, 0755); err != nil {
+		log.Println("[Agent] Failed to create temp dir:", err)
+		return
+	}
+
+	// Merge
+	mergeCmd := exec.Command("go", "tool", "covdata", "merge", "-i=.coverdata", "-o="+tmpOut)
+	if out, err := mergeCmd.CombinedOutput(); err != nil {
+		log.Printf("[Agent] Failed to merge coverage: %v\n%s", err, out)
+		return
+	}
+
+	// Textfmt
+	textFile := filepath.Join(tmpOut, "coverage.out")
+	textCmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+tmpOut, "-o="+textFile)
+	if out, err := textCmd.CombinedOutput(); err != nil {
+		log.Printf("[Agent] Failed to convert to textfmt: %v\n%s", err, out)
+		return
+	}
+
+	// Read text and convert to LCOV
+	textData, err := os.ReadFile(textFile)
+	if err != nil {
+		log.Println("[Agent] Failed to read textfmt file:", err)
+		return
+	}
+
+	lcovData := ConvertTextToLcov(string(textData))
+
+	if _, err := conn.Write([]byte(lcovData)); err != nil {
+		log.Println("[Agent] Failed to send LCOV data:", err)
 		return
 	}
 
 	log.Println("[Agent] LCOV export succeeded")
+}
+
+// ConvertTextToLcov is a basic converter from go tool cover -func= output to LCOV
+func ConvertTextToLcov(input string) string {
+	var buf bytes.Buffer
+	var currentFile string
+	for _, line := range bytes.Split([]byte(input), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		if bytes.HasPrefix(line, []byte("mode:")) {
+			continue
+		}
+		parts := bytes.Split(line, []byte(":"))
+		if len(parts) < 2 {
+			continue
+		}
+		fileFunc := string(parts[0])
+		rest := string(parts[1])
+		if bytes.HasPrefix(line, []byte("SF:")) || filepath.Ext(fileFunc) == ".go" {
+			if fileFunc != currentFile {
+				if currentFile != "" {
+					buf.WriteString("end_of_record\n")
+				}
+				currentFile = fileFunc
+				buf.WriteString("SF:" + fileFunc + "\n")
+			}
+			if len(parts) >= 2 {
+				coverageParts := bytes.Fields([]byte(rest))
+				if len(coverageParts) >= 3 {
+					lineNum := coverageParts[0]
+					hits := coverageParts[2]
+					buf.WriteString("DA:" + string(lineNum) + "," + string(hits) + "\n")
+				}
+			}
+		}
+	}
+	if currentFile != "" {
+		buf.WriteString("end_of_record\n")
+	}
+	return buf.String()
 }
