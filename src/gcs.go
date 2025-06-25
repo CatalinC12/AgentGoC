@@ -37,7 +37,12 @@ func startCoverageAgent() {
 }
 
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			log.Println("[Agent] Failed to close connection:", err)
+		}
+	}(conn)
 
 	reader := bufio.NewReader(conn)
 	firstLine, err := reader.ReadString('\n')
@@ -100,7 +105,6 @@ func handleConnection(conn net.Conn) {
 
 func resetCoverageData() {
 	paths := []string{
-		".coverdata",
 		".agent-tmp",
 	}
 
