@@ -1,12 +1,15 @@
 package src
 
 import (
+	"bufio"
 	"bytes"
+	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 func init() {
@@ -34,24 +37,30 @@ func startCoverageAgent() {
 }
 
 func handleConnection(conn net.Conn) {
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
-			log.Println("[Agent] Failed to close connection:", err)
-		}
-	}(conn)
-	log.Println("[Agent] Received coverage export request")
+	defer conn.Close()
 
-	err := os.Setenv("GOCOVERDIR", ".coverdata")
-	if err != nil {
+	reader := bufio.NewReader(conn)
+	firstLine, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		log.Println("[Agent] Failed to read command:", err)
 		return
 	}
+	firstLine = strings.TrimSpace(firstLine)
+
+	switch firstLine {
+	case "RESET":
+		log.Println("[Agent] Received RESET request")
+		resetCoverageData()
+		conn.Write([]byte("OK\n"))
+		return
+	default:
+		log.Println("[Agent] Received coverage export request")
+	}
+
+	_ = os.Setenv("GOCOVERDIR", ".coverdata")
 
 	tmpOut := ".agent-tmp"
-	err = os.RemoveAll(tmpOut)
-	if err != nil {
-		return
-	}
+	_ = os.RemoveAll(tmpOut)
 	if err := os.MkdirAll(tmpOut, 0755); err != nil {
 		log.Println("[Agent] Failed to create temp dir:", err)
 		return
@@ -89,7 +98,21 @@ func handleConnection(conn net.Conn) {
 	log.Println("[Agent] LCOV export succeeded")
 }
 
-// ConvertTextToLcov is a basic converter from go tool cover -func= output to LCOV
+func resetCoverageData() {
+	paths := []string{
+		".coverdata",
+		".agent-tmp",
+	}
+
+	for _, path := range paths {
+		err := os.RemoveAll(path)
+		if err != nil {
+			log.Printf("[Agent] Failed to delete %s: %v", path, err)
+		}
+	}
+	log.Println("[Agent] Coverage data reset complete")
+}
+
 func ConvertTextToLcov(input string) string {
 	var buf bytes.Buffer
 	var currentFile string
