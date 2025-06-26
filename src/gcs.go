@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +44,8 @@ func handleConnection(conn net.Conn) {
 			log.Println("[Agent] Failed to close connection:", err)
 		}
 	}(conn)
+
+	http.Get("http://localhost:8080/flushcov")
 
 	reader := bufio.NewReader(conn)
 	firstLine, err := reader.ReadString('\n')
