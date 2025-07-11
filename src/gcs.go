@@ -103,20 +103,37 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
+	conn.Close()
 	log.Println("[Agent] LCOV export succeeded")
 }
 
 func resetCoverageData() {
-	paths := []string{
-		".agent-tmp",
+	dir := ".coverdata"
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Printf("[Agent] Failed to read %s: %v", dir, err)
+		return
 	}
 
-	for _, path := range paths {
-		err := os.RemoveAll(path)
-		if err != nil {
-			log.Printf("[Agent] Failed to delete %s: %v", path, err)
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "covcounters") {
+			path := filepath.Join(dir, name)
+			err := os.RemoveAll(path)
+			if err != nil {
+				log.Printf("[Agent] Failed to delete %s: %v", path, err)
+			} else {
+				log.Printf("[Agent] Deleted %s", path)
+			}
 		}
 	}
+
+	err = os.RemoveAll(".agent-tmp")
+	if err != nil {
+		log.Printf("[Agent] Failed to delete .agent-tmp: %v", err)
+	}
+
 	log.Println("[Agent] Coverage data reset complete")
 }
 

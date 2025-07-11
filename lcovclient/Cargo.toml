@@ -1,0 +1,11 @@
+[package]
+name = "lcovclient"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lcov = "0.5.0"
+reqwest = { version = "0.11", features = ["blocking"] }
+anyhow = "1.0"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
