@@ -38,13 +38,6 @@ func startCoverageAgent() {
 }
 
 func handleConnection(conn net.Conn) {
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
-			log.Println("[Agent] Failed to close connection:", err)
-		}
-	}(conn)
-
 	http.Get("http://localhost:8080/flushcov")
 
 	reader := bufio.NewReader(conn)
