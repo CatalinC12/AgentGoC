@@ -103,7 +103,6 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	conn.Close()
 	log.Println("[Agent] LCOV export succeeded")
 }
 
