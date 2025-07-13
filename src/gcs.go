@@ -37,9 +37,33 @@ func startCoverageAgent() {
 	}()
 }
 
+func sendBlock(conn net.Conn, blockType byte, data []byte) error {
+	length := uint32(len(data))
+	header := []byte{
+		blockType,
+		byte(length >> 24),
+		byte(length >> 16),
+		byte(length >> 8),
+		byte(length),
+	}
+	if _, err := conn.Write(header); err != nil {
+		return err
+	}
+	if _, err := conn.Write(data); err != nil {
+		return err
+	}
+	return nil
+}
+
 func handleConnection(conn net.Conn) {
+	defer func() {
+		log.Println("[Agent] Closing connection")
+		conn.Close()
+	}()
+
 	http.Get("http://localhost:8080/flushcov")
 
+	// Read command from client
 	reader := bufio.NewReader(conn)
 	firstLine, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
@@ -48,15 +72,15 @@ func handleConnection(conn net.Conn) {
 	}
 	firstLine = strings.TrimSpace(firstLine)
 
-	switch firstLine {
-	case "RESET":
+	// Handle RESET
+	if firstLine == "RESET" {
 		log.Println("[Agent] Received RESET request")
 		resetCoverageData()
 		conn.Write([]byte("OK\n"))
 		return
-	default:
-		log.Println("[Agent] Received coverage export request")
 	}
+
+	log.Println("[Agent] Received coverage export request")
 
 	_ = os.Setenv("GOCOVERDIR", ".coverdata")
 
@@ -67,14 +91,12 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Merge
+	// Merge and convert coverage data
 	mergeCmd := exec.Command("go", "tool", "covdata", "merge", "-i=.coverdata", "-o="+tmpOut)
 	if out, err := mergeCmd.CombinedOutput(); err != nil {
 		log.Printf("[Agent] Failed to merge coverage: %v\n%s", err, out)
 		return
 	}
-
-	// Textfmt
 	textFile := filepath.Join(tmpOut, "coverage.out")
 	textCmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+tmpOut, "-o="+textFile)
 	if out, err := textCmd.CombinedOutput(); err != nil {
@@ -82,7 +104,6 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Read text and convert to LCOV
 	textData, err := os.ReadFile(textFile)
 	if err != nil {
 		log.Println("[Agent] Failed to read textfmt file:", err)
@@ -91,10 +112,9 @@ func handleConnection(conn net.Conn) {
 
 	lcovData := ConvertTextToLcov(string(textData))
 
-	if _, err := conn.Write([]byte(lcovData)); err != nil {
-		log.Println("[Agent] Failed to send LCOV data:", err)
-		return
-	}
+	sendBlock(conn, 0x01, []byte("LCOV Report Header"))
+	sendBlock(conn, 0x02, []byte(lcovData))
+	sendBlock(conn, 0xFF, nil)
 
 	log.Println("[Agent] LCOV export succeeded")
 }
