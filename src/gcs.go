@@ -193,9 +193,10 @@ func ConvertTextToLcov(input string) string {
 			if len(parts) >= 2 {
 				coverageParts := bytes.Fields([]byte(rest))
 				if len(coverageParts) >= 3 {
-					lineNum := coverageParts[0]
-					hits := coverageParts[2]
-					buf.WriteString("DA:" + string(lineNum) + "," + string(hits) + "\n")
+					lineCol := strings.Split(string(coverageParts[0]), ".")
+					lineNum := lineCol[0]
+					hits := string(coverageParts[2])
+					buf.WriteString("DA:" + lineNum + "," + hits + "\n")
 				}
 			}
 		}
