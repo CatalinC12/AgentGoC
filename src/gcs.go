@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +37,7 @@ func startCoverageAgent() {
 }
 
 func sendBlock(conn net.Conn, blockType byte, data []byte) error {
+	log.Printf("[Agent] Sent block type: 0x%X (%d bytes)", blockType, len(data))
 	length := uint32(len(data))
 	header := []byte{
 		blockType,
@@ -61,7 +61,7 @@ func handleConnection(conn net.Conn) {
 		conn.Close()
 	}()
 
-	http.Get("http://localhost:8080/flushcov")
+	//http.Get("http://localhost:8080/flushcov")
 
 	// Read command from client
 	reader := bufio.NewReader(conn)
