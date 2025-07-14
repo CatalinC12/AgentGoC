@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/coverage"
 	"strings"
 	"time"
 )
@@ -90,6 +91,7 @@ func handleConnection(conn net.Conn) {
 
 	if firstLine == "RESET" {
 		log.Println("[Agent] Received RESET request")
+		coverage.ClearCounters()
 		resetCoverageData()
 		conn.Write([]byte("OK\n"))
 		return
