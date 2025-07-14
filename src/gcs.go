@@ -3,13 +3,16 @@ package src
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func init() {
@@ -55,24 +58,36 @@ func sendBlock(conn net.Conn, blockType byte, data []byte) error {
 	return nil
 }
 
+func isTimeout(err error) bool {
+	var ne net.Error
+	ok := errors.As(err, &ne)
+	return ok && ne.Timeout()
+}
+
 func handleConnection(conn net.Conn) {
 	defer func() {
-		log.Println("[Agent] Closing connection")
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			log.Println("[Agent] Failed to close connection:", err)
+		} else {
+			log.Println("[Agent] Connection closed")
+		}
 	}()
 
-	//http.Get("http://localhost:8080/flushcov")
+	log.Println("[Agent] Connection accepted")
 
-	// Read command from client
+	http.Get("http://localhost:8080/flushcov")
+
 	reader := bufio.NewReader(conn)
+	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
 	firstLine, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
+	if err != nil && err != io.EOF && !isTimeout(err) {
 		log.Println("[Agent] Failed to read command:", err)
 		return
 	}
 	firstLine = strings.TrimSpace(firstLine)
 
-	// Handle RESET
 	if firstLine == "RESET" {
 		log.Println("[Agent] Received RESET request")
 		resetCoverageData()
@@ -91,12 +106,14 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Merge and convert coverage data
+	// Merge coverage
 	mergeCmd := exec.Command("go", "tool", "covdata", "merge", "-i=.coverdata", "-o="+tmpOut)
 	if out, err := mergeCmd.CombinedOutput(); err != nil {
 		log.Printf("[Agent] Failed to merge coverage: %v\n%s", err, out)
 		return
 	}
+
+	// Convert to text
 	textFile := filepath.Join(tmpOut, "coverage.out")
 	textCmd := exec.Command("go", "tool", "covdata", "textfmt", "-i="+tmpOut, "-o="+textFile)
 	if out, err := textCmd.CombinedOutput(); err != nil {
@@ -104,6 +121,7 @@ func handleConnection(conn net.Conn) {
 		return
 	}
 
+	// Read and send LCOV in blocks
 	textData, err := os.ReadFile(textFile)
 	if err != nil {
 		log.Println("[Agent] Failed to read textfmt file:", err)
@@ -111,8 +129,7 @@ func handleConnection(conn net.Conn) {
 	}
 
 	lcovData := ConvertTextToLcov(string(textData))
-
-	sendBlock(conn, 0x01, []byte("LCOV Report Header"))
+	sendBlock(conn, 0x01, []byte("LCOV coverage data"))
 	sendBlock(conn, 0x02, []byte(lcovData))
 	sendBlock(conn, 0xFF, nil)
 
