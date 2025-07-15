@@ -93,6 +93,7 @@ func handleConnection(conn net.Conn) {
 		log.Println("[Agent] Received RESET request")
 		coverage.ClearCounters()
 		resetCoverageData()
+		http.Get("http://localhost:8080/flushcov")
 		conn.Write([]byte("OK\n"))
 		return
 	}
@@ -132,7 +133,17 @@ func handleConnection(conn net.Conn) {
 
 	lcovData := ConvertTextToLcov(string(textData))
 	sendBlock(conn, 0x01, []byte("LCOV coverage data"))
-	sendBlock(conn, 0x02, []byte(lcovData))
+	lcovBytes := []byte(lcovData)
+	chunkSize := 1024
+
+	for i := 0; i < len(lcovBytes); i += chunkSize {
+		end := i + chunkSize
+		if end > len(lcovBytes) {
+			end = len(lcovBytes)
+		}
+		chunk := lcovBytes[i:end]
+		sendBlock(conn, 0x02, chunk)
+	}
 	sendBlock(conn, 0xFF, nil)
 
 	log.Println("[Agent] LCOV export succeeded")
