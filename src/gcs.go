@@ -79,6 +79,8 @@ func handleConnection(conn net.Conn) {
 
 	http.Get("http://localhost:8080/flushcov")
 
+	coverage.ClearCounters()
+
 	reader := bufio.NewReader(conn)
 	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 
